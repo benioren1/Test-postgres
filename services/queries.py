@@ -1,6 +1,6 @@
 create_table_mission = '''
-        CREATE TABLE mission (
-                         mission_id INTEGER PRIMARY KEY,                 -- Mission ID, auto-incremented primary key
+        CREATE TABLE IF NOT EXISTS mission (
+                         mission_id SERIAL PRIMARY KEY,                 -- Mission ID, auto-incremented primary key
                          mission_date DATE,                             -- Mission Date, a date field
                          theater_of_operations VARCHAR(100),            -- Theater of Operations, assuming text data
                          country VARCHAR(100),                          -- Country, assuming text data
