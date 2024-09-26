@@ -1,5 +1,5 @@
 import psycopg2
-
+from flask_sqlalchemy import SQLAlchemy
 def get_db_connection():
     conn = psycopg2.connect(
         dbname="normal_wwii_mission",
@@ -10,4 +10,5 @@ def get_db_connection():
     )
     return conn
 
+db = SQLAlchemy()
 

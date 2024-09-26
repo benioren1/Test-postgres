@@ -3,6 +3,28 @@ from queries import *
 from db import get_db_connection
 
 
+def get_or_insert_country(cur, country_name):
+    cur.execute("SELECT country_id FROM country WHERE country_name = %s", (country_name,))
+    result = cur.fetchone()
+    if result:
+        return result[0]
+    else:
+        cur.execute("INSERT INTO country (country_name) VALUES (%s) RETURNING country_id;", (country_name,))
+        return cur.fetchone()[0]
+
+
+def get_or_insert_city(cur, city_name, country_id):
+
+    cur.execute("SELECT city_id FROM city WHERE city_name = %s AND city_country = %s", (city_name, country_id))
+    result = cur.fetchone()
+    if result:
+        return result[0]
+    else:
+        cur.execute("INSERT INTO city (city_name, city_country) VALUES (%s, %s) RETURNING city_id;",
+                    (city_name, country_id))
+        return cur.fetchone()[0]
+
+
 def normal_database():
     conn_new = get_db_connection()
     conn_old = psycopg2.connect(
@@ -23,11 +45,12 @@ def normal_database():
 
         s_old = conn_old.cursor()
         s_old.execute("SELECT * FROM mission")
-        r=0
-        while r<10000:
+        r = 0
+        while r < 10:
             mission_row = s_old.fetchone()
             if mission_row is None:
                 break
+
 
             mission_date = mission_row[1]
             theater_of_operations = mission_row[2]
@@ -75,42 +98,48 @@ def normal_database():
             bomb_damage_assessment = mission_row[44]
             source_id = mission_row[45]
 
-            insert_country = '''
-                            INSERT INTO country (country_name) VALUES (%s) RETURNING country_id;
-                        '''
+
+            country_id1 = get_or_insert_country(cur, target_country)
 
 
+            city_id1 = get_or_insert_city(cur, target_city, country_id1)
 
-            cur.execute(insert_country, (target_country,))
-            country_id1 = cur.fetchone()[0]
+            loc_id1 = add_target_loc(city_id1, cur, target_latitude, target_longitude)
+
+            target_id1 = add_target(cur, loc_id1, target_industry, target_key, target_priority, target_type)
+
+            insert_mission(air_force, airborne_aircraft, aircraft_damaged, aircraft_failed, aircraft_lost,
+                           aircraft_returned, aircraft_series, altitude_hundreds_of_feet, attacking_aircraft,
+                           bomb_damage_assessment, bombing_aircraft, callsign, country, cur, fragmentation_devices,
+                           fragmentation_devices_type, fragmentation_devices_weight_pounds,
+                           fragmentation_devices_weight_tons, high_explosives, high_explosives_type,
+                           high_explosives_weight_pounds, high_explosives_weight_tons, incendiary_devices,
+                           incendiary_devices_type, incendiary_devices_weight_pounds, incendiary_devices_weight_tons,
+                           mission_date, mission_type, source_id, takeoff_base, takeoff_latitude, takeoff_location,
+                           takeoff_longitude, target_id1, target_key, theater_of_operations, time_over_target,
+                           total_weight_pounds, total_weight_tons, unit_id)
+
+            conn_new.commit()
+            r += 1
+    except Exception as e:
+        print(e)
+        conn_new.rollback()
+    finally:
+        cur.close()
+        conn_old.close()
+        conn_new.close()
 
 
-            insert_city = f'''
-                            INSERT INTO city (city_name, city_country) VALUES (%s, %s) RETURNING city_id
-                            ,(city_name, {country_id1});
-                        '''
-            cur.execute(insert_city, (target_city, country_id1))
-            city_id1 = cur.fetchone()[0]
-
-            insert_target_location = f'''
-                INSERT INTO target_location (target_city, target_latitude, target_longitude) 
-                VALUES (%s, %s, %s) 
-                RETURNING loc_id,({city_id1},target_latitude,target_longitude);
-            '''
-            # print(f"Inserting target location: {city_id1}, {target_latitude}, {target_longitude}")
-            cur.execute(insert_target_location, (city_id1, target_latitude, target_longitude))
-            loc_id1 = cur.fetchone()[0]
-
-            insert_target = f'''
-                insert into targets (target_key, target_type, target_industry, target_priority, loc_id) VALUES (%s, %s, %s, %s, %s)
-                 returning target_id;
-            '''
-            params_t = (target_key,target_type, target_industry, target_priority, loc_id1,)
-            # print(f"Inserting target: {target_key}, {target_type}, {target_industry}, {target_priority}, {loc_id1}")
-            cur.execute(insert_target, params_t)
-            target_id1 = cur.fetchone()[0]
-
-            insert_mission = f"""
+def insert_mission(air_force, airborne_aircraft, aircraft_damaged, aircraft_failed, aircraft_lost, aircraft_returned,
+                   aircraft_series, altitude_hundreds_of_feet, attacking_aircraft, bomb_damage_assessment,
+                   bombing_aircraft, callsign, country, cur, fragmentation_devices, fragmentation_devices_type,
+                   fragmentation_devices_weight_pounds, fragmentation_devices_weight_tons, high_explosives,
+                   high_explosives_type, high_explosives_weight_pounds, high_explosives_weight_tons, incendiary_devices,
+                   incendiary_devices_type, incendiary_devices_weight_pounds, incendiary_devices_weight_tons,
+                   mission_date, mission_type, source_id, takeoff_base, takeoff_latitude, takeoff_location,
+                   takeoff_longitude, target_id1, target_key, theater_of_operations, time_over_target,
+                   total_weight_pounds, total_weight_tons, unit_id):
+    insert_mission = '''
             INSERT INTO mission (mission_date, theater_of_operations, country, air_force, unit_id,
             aircraft_series, callsign, mission_type, takeoff_base, takeoff_location, takeoff_latitude,
             takeoff_longitude, target_key, target_id, altitude_hundreds_of_feet, airborne_aircraft,
@@ -122,45 +151,43 @@ def normal_database():
             total_weight_pounds, total_weight_tons, time_over_target, bomb_damage_assessment, source_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-            """
-
-            params_mission = (mission_date, theater_of_operations, country, air_force, unit_id,
-                              aircraft_series, callsign, mission_type, takeoff_base, takeoff_location, takeoff_latitude,
-                              takeoff_longitude, target_key, target_id1, altitude_hundreds_of_feet, airborne_aircraft,
-                              attacking_aircraft, bombing_aircraft, aircraft_returned, aircraft_failed,
-                              aircraft_damaged,
-                              aircraft_lost, high_explosives, high_explosives_type, high_explosives_weight_pounds,
-                              high_explosives_weight_tons, incendiary_devices, incendiary_devices_type,
-                              incendiary_devices_weight_pounds, incendiary_devices_weight_tons, fragmentation_devices,
-                              fragmentation_devices_type, fragmentation_devices_weight_pounds,
-                              fragmentation_devices_weight_tons,
-                              total_weight_pounds, total_weight_tons, time_over_target, bomb_damage_assessment,
-                              source_id,)
-
-            cur.execute(insert_mission, params_mission)
+            '''
+    params_mission = (
+        mission_date, theater_of_operations, country, air_force, unit_id,
+        aircraft_series, callsign, mission_type, takeoff_base, takeoff_location, takeoff_latitude,
+        takeoff_longitude, target_key, target_id1, altitude_hundreds_of_feet, airborne_aircraft,
+        attacking_aircraft, bombing_aircraft, aircraft_returned, aircraft_failed,
+        aircraft_damaged, aircraft_lost, high_explosives, high_explosives_type, high_explosives_weight_pounds,
+        high_explosives_weight_tons, incendiary_devices, incendiary_devices_type,
+        incendiary_devices_weight_pounds, incendiary_devices_weight_tons, fragmentation_devices,
+        fragmentation_devices_type, fragmentation_devices_weight_pounds,
+        fragmentation_devices_weight_tons, total_weight_pounds, total_weight_tons, time_over_target,
+        bomb_damage_assessment, source_id,
+    )
+    cur.execute(insert_mission, params_mission)
 
 
+def add_target(cur, loc_id1, target_industry, target_key, target_priority, target_type):
+    insert_target = '''
+                INSERT INTO targets (target_key, target_type, target_industry, target_priority, loc_id) 
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING target_id;
+            '''
+    params_t = (target_key, target_type, target_industry, target_priority, loc_id1)
+    cur.execute(insert_target, params_t)
+    target_id1 = cur.fetchone()[0]
+    return target_id1
 
-            conn_new.commit()
-            r+=1
-    except Exception as e:
-        print(e)
-        conn_old.rollback()
-    finally:
-        cur.close()
-        conn_old.close()
-        conn_new.close()
 
+def add_target_loc(city_id1, cur, target_latitude, target_longitude):
+    cur.execute('''
+                INSERT INTO target_location (target_city, target_latitude, target_longitude) 
+                VALUES (%s, %s, %s) 
+                RETURNING loc_id;
+            ''', (city_id1, target_latitude, target_longitude))
+    loc_id1 = cur.fetchone()[0]
+    return loc_id1
 
-
-    # cur.execute("SELECT * FROM mission")
-    # rows = cur.fetchall()
-    # my_set = set()
-    # for row in rows:
-    #     my_set.add(row)
-    # print(my_set)
-    # cur.close()
-    # conn.close()
 
 if __name__ == "__main__":
     normal_database()
